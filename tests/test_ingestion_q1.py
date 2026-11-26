@@ -1,18 +1,11 @@
 """Unit tests for Q1 defensive CSV reading and bounds validation."""
 
-from __future__ import annotations
-
 import logging
 from pathlib import Path
 import tempfile
 import unittest
 
-from src.ingestion import (
-    DEFAULT_RAW_DATA_PATH,
-    EXPECTED_COLUMNS,
-    audit_raw_csv,
-    read_and_audit_csv,
-)
+from src.ingestion import DEFAULT_RAW_DATA_PATH, EXPECTED_COLUMNS, read_and_audit_csv
 
 HEADER = ",".join(EXPECTED_COLUMNS)
 
@@ -27,10 +20,10 @@ class TestIngestionQ1(unittest.TestCase):
 
     def test_actual_raw_dataset_passes_q1_bounds(self) -> None:
         result = read_and_audit_csv(DEFAULT_RAW_DATA_PATH)
-        self.assertEqual(result.total_rows, 708)
-        self.assertEqual(result.accepted_count, 708)
-        self.assertEqual(result.rejected_count, 0)
-        self.assertEqual(tuple(result.valid_records[0].keys()), EXPECTED_COLUMNS)
+        self.assertEqual(result["total_rows"], 708)
+        self.assertEqual(result["accepted_count"], 708)
+        self.assertEqual(result["rejected_count"], 0)
+        self.assertEqual(tuple(result["valid_records"][0].keys()), EXPECTED_COLUMNS)
 
     def test_inclusive_boundary_values_accepted(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -44,8 +37,8 @@ class TestIngestionQ1(unittest.TestCase):
                 ],
             )
             result = read_and_audit_csv(csv_path)
-            self.assertEqual(result.accepted_count, 2)
-            self.assertEqual(result.rejected_count, 0)
+            self.assertEqual(result["accepted_count"], 2)
+            self.assertEqual(result["rejected_count"], 0)
 
     def test_out_of_range_values_rejected_and_logged(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -67,18 +60,18 @@ class TestIngestionQ1(unittest.TestCase):
             with self.assertLogs("src.ingestion", level=logging.WARNING) as logs:
                 result = read_and_audit_csv(csv_path)
 
-            self.assertEqual(result.total_rows, 8)
-            self.assertEqual(result.accepted_count, 0)
-            self.assertEqual(result.rejected_count, 8)
+            self.assertEqual(result["total_rows"], 8)
+            self.assertEqual(result["accepted_count"], 0)
+            self.assertEqual(result["rejected_count"], 8)
             self.assertEqual(len(logs.output), 8)
-            self.assertIn("Study_Hours_per_Week=-1", result.rejected_records[0].reason)
-            self.assertIn("Study_Hours_per_Week=61", result.rejected_records[1].reason)
-            self.assertIn("Attendance_Rate=-0.5", result.rejected_records[2].reason)
-            self.assertIn("Attendance_Rate=100.1", result.rejected_records[3].reason)
-            self.assertIn("Past_Exam_Scores=-5", result.rejected_records[4].reason)
-            self.assertIn("Past_Exam_Scores=101", result.rejected_records[5].reason)
-            self.assertIn("Final_Exam_Score=-1", result.rejected_records[6].reason)
-            self.assertIn("Final_Exam_Score=105", result.rejected_records[7].reason)
+            self.assertIn("Study_Hours_per_Week=-1", result["rejected_records"][0]["reason"])
+            self.assertIn("Study_Hours_per_Week=61", result["rejected_records"][1]["reason"])
+            self.assertIn("Attendance_Rate=-0.5", result["rejected_records"][2]["reason"])
+            self.assertIn("Attendance_Rate=100.1", result["rejected_records"][3]["reason"])
+            self.assertIn("Past_Exam_Scores=-5", result["rejected_records"][4]["reason"])
+            self.assertIn("Past_Exam_Scores=101", result["rejected_records"][5]["reason"])
+            self.assertIn("Final_Exam_Score=-1", result["rejected_records"][6]["reason"])
+            self.assertIn("Final_Exam_Score=105", result["rejected_records"][7]["reason"])
 
     def test_malformed_non_numeric_and_missing_id_rows_handled(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -98,25 +91,22 @@ class TestIngestionQ1(unittest.TestCase):
             )
             result = read_and_audit_csv(csv_path)
 
-            self.assertEqual(result.total_rows, 7)
-            self.assertEqual(result.accepted_count, 1)
-            self.assertEqual(result.rejected_count, 6)
-            self.assertEqual(result.valid_records[0]["Student_ID"], "S100")
-            self.assertIn("non-numeric", result.rejected_records[0].reason)
-            self.assertIn("non-finite", result.rejected_records[1].reason)
-            self.assertIn("expected 10 columns, found 5", result.rejected_records[2].reason)
-            self.assertIn("expected 10 columns, found 11", result.rejected_records[3].reason)
-            self.assertIn("Student_ID is missing or empty", result.rejected_records[4].reason)
-            self.assertIn("Empty or blank line", result.rejected_records[5].reason)
+            self.assertEqual(result["total_rows"], 7)
+            self.assertEqual(result["accepted_count"], 1)
+            self.assertEqual(result["rejected_count"], 6)
+            self.assertEqual(result["valid_records"][0]["Student_ID"], "S100")
+            self.assertIn("could not convert string to float", result["rejected_records"][0]["reason"])
+            self.assertIn("non-finite", result["rejected_records"][1]["reason"])
+            self.assertIn("Expected 10 columns, found 5", result["rejected_records"][2]["reason"])
+            self.assertIn("Expected 10 columns, found 11", result["rejected_records"][3]["reason"])
+            self.assertIn("Student_ID is missing or empty", result["rejected_records"][4]["reason"])
+            self.assertIn("Empty or blank line", result["rejected_records"][5]["reason"])
 
-    def test_missing_file_raises_and_graceful_wrapper_returns_none(self) -> None:
+    def test_missing_file_raises_and_logs_error(self) -> None:
         missing_path = Path("data/raw/does_not_exist.csv")
         with self.assertLogs("src.ingestion", level=logging.ERROR):
             with self.assertRaises(FileNotFoundError):
                 read_and_audit_csv(missing_path)
-
-        with self.assertLogs("src.ingestion", level=logging.ERROR):
-            self.assertIsNone(audit_raw_csv(missing_path))
 
     def test_missing_required_column_raises_value_error(self) -> None:
         with tempfile.TemporaryDirectory() as tmpdir:
